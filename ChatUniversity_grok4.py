@@ -17,36 +17,57 @@ client = Groq(api_key=api_key)
 # ----------------------------
 st.title("📊 Ask Questions About Your Data (Groq + DuckDB + Streamlit)")
 
-uploaded_file = st.file_uploader("Upload CSV or Excel file", type=["csv", "xlsx"])
+# ----------------------------
+# Load default data from 'data/' folder
+# ----------------------------
+default_file_path = os.path.join("data", "clean_2026QSWorldUniversityRankings.xlsx")
+df = None
+if os.path.exists(default_file_path):
+    try:
+        if default_file_path.endswith(".csv"):
+            df = pd.read_csv(default_file_path, low_memory=False)
+            for col in df.columns:
+                try:
+                    df[col] = pd.to_numeric(df[col])
+                except Exception:
+                    pass
+        else:
+            df = pd.read_excel(default_file_path)
+        st.info(f"✅ Loaded default dataset from `{default_file_path}`")
+    except Exception as e:
+        st.error(f"❌ Error loading default file: {e}")
 
+# ----------------------------
+# File uploader (overwrite default if used)
+# ----------------------------
+uploaded_file = st.file_uploader("Upload CSV or Excel file to overwrite default", type=["csv", "xlsx"])
 if uploaded_file:
-    # Handle CSV
-    if uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file, low_memory=False)
-        # Try type inference for numeric columns
-        for col in df.columns:
-            try:
-                df[col] = pd.to_numeric(df[col])
-            except Exception:
-                pass
+    try:
+        if uploaded_file.name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file, low_memory=False)
+            for col in df.columns:
+                try:
+                    df[col] = pd.to_numeric(df[col])
+                except Exception:
+                    pass
+        else:
+            df = pd.read_excel(uploaded_file)
+        st.success(f"✅ Data loaded from uploaded file: {uploaded_file.name}")
+    except Exception as e:
+        st.error(f"❌ Error reading uploaded file: {e}")
 
-    # Handle Excel
-    elif uploaded_file.name.endswith(".xlsx"):
-        df = pd.read_excel(uploaded_file)
-
+# ----------------------------
+# Continue only if df is loaded
+# ----------------------------
+if df is not None:
     # Create DuckDB connection
     conn = duckdb.connect(database=":memory:")
     conn.register("unis", df)
 
-    st.success("✅ Data loaded and registered in DuckDB!")
-
-    # Show preview
+    st.success("✅ Data registered in DuckDB!")
     st.write("### Data Preview", df.head())
 
-    # Get available columns
     all_columns = list(df.columns)
-
-    # User question
     question = st.text_area("Ask a question about the data")
 
     if st.button("Generate SQL with Groq") and question.strip():
@@ -60,7 +81,6 @@ if uploaded_file:
 
         Only return the SQL query. Do not add ```sql or extra formatting.
         """
-
         try:
             response = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
@@ -96,3 +116,7 @@ if uploaded_file:
 
         except Exception as e:
             st.error(f"❌ Groq API error: {e}")
+
+else:
+    st.warning("⚠️ No data loaded. Upload a file or ensure the default file exists in `data/` folder.")
+
